@@ -26,7 +26,6 @@ import (
 	"github.com/dimfeld/httptreemux"
 	"github.com/emicklei/go-restful"
 	"github.com/gin-gonic/gin"
-	"github.com/go-macaron/macaron"
 	"github.com/go-martini/martini"
 	"github.com/go-zoo/bone"
 	"github.com/gocraft/web"
@@ -46,7 +45,7 @@ import (
 	"github.com/plimble/ace"
 	"github.com/rcrowley/go-tigertonic"
 	"github.com/revel/revel"
-	"github.com/robfig/pathtree"
+	"github.com/revel/pathtree"
 	"github.com/typepress/rivet"
 	"github.com/ursiform/bear"
 	"github.com/vanng822/r2router"
@@ -932,32 +931,6 @@ func loadLARSSingle(method, path string, h interface{}) http.Handler {
 // Macaron
 func macaronHandler() {}
 
-func macaronHandlerWrite(c *macaron.Context) string {
-	return c.Params("name")
-}
-
-func macaronHandlerTest(c *macaron.Context) string {
-	return c.Req.RequestURI
-}
-
-func loadMacaron(routes []route) http.Handler {
-	var h = []macaron.Handler{macaronHandler}
-	if loadTestHandler {
-		h[0] = macaronHandlerTest
-	}
-
-	m := macaron.New()
-	for _, route := range routes {
-		m.Handle(route.method, route.path, h)
-	}
-	return m
-}
-
-func loadMacaronSingle(method, path string, handler interface{}) http.Handler {
-	m := macaron.New()
-	m.Handle(method, path, []macaron.Handler{handler})
-	return m
-}
 
 // Martini
 func martiniHandler() {}
@@ -1148,7 +1121,7 @@ func (rc *RevelController) HandleWrite() revel.Result {
 }
 
 func (rc *RevelController) HandleTest() revel.Result {
-	return rc.RenderText(rc.Request.RequestURI)
+	return rc.RenderText(rc.Request.GetRequestURI())
 }
 
 type revelResult struct{}
@@ -1164,11 +1137,16 @@ func (rc *RevelController) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		panic("Not implemented")
 	} else {
 		var (
-			req  = revel.NewRequest(r)
-			resp = revel.NewResponse(w)
-			c    = revel.NewController(req, resp)
+			rr= &revel.GoRequest{
+				Original:r,
+			}
+
+			rp=&revel.GoResponse{Writer:w}
+			req  = revel.NewRequest(rr )
+			resp = revel.NewResponse(rp)
+			c    = revel.NewController(&revel.GoContext{Request:rr,Response:rp,})
 		)
-		req.Websocket = nil
+		req.WebSocket =nil
 		revel.Filters[0](c, revel.Filters[1:])
 		if c.Result != nil {
 			c.Result.Apply(req, resp)
@@ -1176,7 +1154,7 @@ func (rc *RevelController) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			panic("Not implemented")
 		}
 		// Close the Writer if we can
-		if w, ok := resp.Out.(io.Closer); ok {
+		if w, ok := resp.GetWriter().(io.Closer); ok {
 			w.Close()
 		}
 	}
@@ -1215,7 +1193,7 @@ func loadRevel(routes []route) http.Handler {
 	// parseRoutes
 	var rs []*revel.Route
 	for _, r := range routes {
-		rs = append(rs, revel.NewRoute(r.method, r.path, h, "", "", 0))
+		rs = append(rs, revel.NewRoute(&revel.Module{}, r.method, r.path, h, "", "", 0))
 	}
 	router.Routes = rs
 
@@ -1241,7 +1219,7 @@ func loadRevel(routes []route) http.Handler {
 func loadRevelSingle(method, path, action string) http.Handler {
 	router := revel.NewRouter("")
 
-	route := revel.NewRoute(method, path, action, "", "", 0)
+	route := revel.NewRoute(&revel.Module{}, method, path, action, "", "", 0)
 	if err := router.Tree.Add(route.TreePath, route); err != nil {
 		panic(err)
 	}
